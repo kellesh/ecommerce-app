@@ -1,7 +1,6 @@
 package dev.ellesh.productsearch.controllers;
 
 import dev.ellesh.productsearch.models.Product;
-import dev.ellesh.productsearch.models.Product;
 import dev.ellesh.productsearch.services.ProductSearchService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;

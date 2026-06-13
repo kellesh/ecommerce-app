@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>3.2.5</version>
         <relativePath/>
     </parent>
 
@@ -34,6 +34,11 @@
             <artifactId>spring-boot-starter-data-elasticsearch</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+        </dependency>
+
         <!-- Swagger / OpenAPI -->
         <dependency>
             <groupId>org.springdoc</groupId>
@@ -47,6 +52,7 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
 
         <!-- Testcontainers for Elasticsearch (in-memory ES for tests) -->
         <dependency>

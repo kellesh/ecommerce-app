@@ -3,12 +3,16 @@ package dev.ellesh.productsearch.services;
 import dev.ellesh.productsearch.models.Product;
 import dev.ellesh.productsearch.repositories.ProductSearchRepository;
 
-import org.elasticsearch.index.query.QueryBuilders;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import co.elastic.clients.elasticsearch._types.FieldValue;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.query.NativeSearchQueryBuilder;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 public class ProductSearchService {
@@ -31,47 +35,89 @@ public class ProductSearchService {
         productRepo.deleteById(id);
     }
 
-    public Page<ProductDocument> advancedSearch(String text,
-                                                List<Long> categoryIds,
-                                                Double minPrice,
-                                                Double maxPrice,
-                                                String sortBy,   // "priceAsc", "priceDesc", "relevance"
-                                                Pageable pageable) {
-        var boolQuery = QueryBuilders.boolQuery();
+    public Page<Product> advancedSearch(String text,
+                                        List<Long> categoryIds,
+                                        Double minPrice,
+                                        Double maxPrice,
+                                        String sortBy,
+                                        Pageable pageable) {
+
+        List<co.elastic.clients.elasticsearch._types.query_dsl.Query> mustQueries = new ArrayList<>();
+        List<co.elastic.clients.elasticsearch._types.query_dsl.Query> filterQueries = new ArrayList<>();
 
         // Full-text search
         if (text != null && !text.isBlank()) {
-            boolQuery.must(QueryBuilders.multiMatchQuery(text, "name", "description", "categoryName"));
+            mustQueries.add(co.elastic.clients.elasticsearch._types.query_dsl.Query.of(q -> q
+                    .multiMatch(m -> m
+                            .query(text)
+                            .fields("name", "description", "categoryName")
+                    )));
         }
 
         // Category filter
         if (categoryIds != null && !categoryIds.isEmpty()) {
-            boolQuery.filter(QueryBuilders.termsQuery("categoryId", categoryIds));
+            List<FieldValue> categoryValues = categoryIds.stream()
+                    .map(FieldValue::of)
+                    .toList();
+
+            filterQueries.add(co.elastic.clients.elasticsearch._types.query_dsl.Query.of(q -> q
+                    .terms(t -> t
+                            .field("categoryId")
+                            .terms(tf -> tf.value(categoryValues))
+                    )));
         }
 
         // Price range filter
         if (minPrice != null || maxPrice != null) {
-            var range = QueryBuilders.rangeQuery("price");
-            if (minPrice != null) range.gte(minPrice);
-            if (maxPrice != null) range.lte(maxPrice);
-            boolQuery.filter(range);
+            filterQueries.add(co.elastic.clients.elasticsearch._types.query_dsl.Query.of(q -> q
+                    .range(r -> {
+                        r.field("price");
+                        if (minPrice != null) {
+                            r.gte(co.elastic.clients.json.JsonData.of(minPrice));
+                        }
+                        if (maxPrice != null) {
+                            r.lte(co.elastic.clients.json.JsonData.of(maxPrice));
+                        }
+                        return r;
+                    })
+            ));
         }
 
-        var queryBuilder = new NativeSearchQueryBuilder()
-                .withQuery(boolQuery)
-                .withPageable(pageable);
+        NativeQuery query = NativeQuery.builder()
+                .withQuery(q -> q
+                        .bool(b -> {
+                            if (!mustQueries.isEmpty()) {
+                                b.must(mustQueries);
+                            }
+                            if (!filterQueries.isEmpty()) {
+                                b.filter(filterQueries);
+                            }
+                            return b;
+                        })
+                )
+                .withPageable(pageable)
+                .build();
 
         // Sorting
         if ("priceAsc".equalsIgnoreCase(sortBy)) {
-            queryBuilder.withSort(org.springframework.data.domain.Sort.by("price").ascending());
+            query.addSort(org.springframework.data.domain.Sort.by("price").ascending());
         } else if ("priceDesc".equalsIgnoreCase(sortBy)) {
-            queryBuilder.withSort(org.springframework.data.domain.Sort.by("price").descending());
+            query.addSort(org.springframework.data.domain.Sort.by("price").descending());
         } else if ("relevance".equalsIgnoreCase(sortBy)) {
-            queryBuilder.withSort(org.springframework.data.domain.Sort.by("_score").descending());
+            query.addSort(org.springframework.data.domain.Sort.by("_score").descending());
         }
 
-        var query = queryBuilder.build();
-        return operations.search(query, ProductDocument.class).map(hit -> hit.getContent());
-    }
+        //return operations.search(query, Product.class).map(hit -> hit.getContent());
+        var searchHits = operations.search(query, Product.class);
 
+        List<Product> products = searchHits.stream()
+                .map(hit -> hit.getContent())
+                .toList();
+
+        return new org.springframework.data.domain.PageImpl<>(
+                products,
+                pageable,
+                searchHits.getTotalHits()
+        );
+    }
 }
